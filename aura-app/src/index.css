@@ -1,0 +1,123 @@
+/* ── Google Fonts Import ─────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600&display=swap');
+
+/* ── CSS Variables — Your Design System ─────────────────────── */
+:root {
+  /* Backgrounds */
+  --bg-base:        #080808;
+  --bg-surface:     #111111;
+  --bg-elevated:    #1a1a1a;
+  --bg-hover:       #222222;
+
+  /* Borders */
+  --border-subtle:  #1f1f1f;
+  --border-default: #2a2a2a;
+  --border-strong:  #444444;
+
+  /* Text */
+  --text-primary:   #f0f0f0;
+  --text-secondary: #888888;
+  --text-muted:     #444444;
+
+  /* Status Colors */
+  --critical:       #ff3b3b;
+  --critical-bg:    #1a0808;
+  --critical-glow:  rgba(255, 59, 59, 0.15);
+  --warning:        #f59e0b;
+  --warning-bg:     #1a1200;
+  --safe:           #22c55e;
+  --safe-bg:        #071a0e;
+  --info:           #3b82f6;
+
+  /* Typography */
+  --font-display:   'Bebas Neue', sans-serif;
+  --font-mono:      'DM Mono', monospace;
+  --font-body:      'DM Sans', sans-serif;
+
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* Radii */
+  --radius-sm:  6px;
+  --radius-md:  10px;
+  --radius-lg:  16px;
+  --radius-xl:  24px;
+
+  /* Transitions */
+  --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── Reset ───────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+/* ── Scrollbar ───────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--bg-base); }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 2px; }
+
+/* ── Utility Classes ─────────────────────────────────────────── */
+.mono { font-family: var(--font-mono); }
+.display { font-family: var(--font-display); }
+
+/* ── Keyframe Animations ─────────────────────────────────────── */
+
+/* Pulse ring — for critical alerts */
+@keyframes pulse-ring {
+  0%   { box-shadow: 0 0 0 0 var(--critical-glow); }
+  70%  { box-shadow: 0 0 0 12px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+/* Fade in from below */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Slide in from right */
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* Blink for live indicator */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+/* Scan line — for the command center feel */
+@keyframes scan {
+  0%   { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

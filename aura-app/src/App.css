@@ -1,0 +1,148 @@
+/* Centers everything on the screen and sets a dark mode background */
+body {
+  margin: 0;
+  background-color: #121212;
+  color: white;
+  font-family: 'Arial', sans-serif;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+}
+
+.sos-container {
+  text-align: center;
+  width: 90%;
+  max-width: 400px; /* Keeps it looking like a mobile phone screen */
+}
+
+.title {
+  color: #ff4d4d;
+  font-size: 2.5rem;
+  margin-bottom: 5px;
+  letter-spacing: 2px;
+}
+
+.subtitle {
+  color: #aaaaaa;
+  margin-bottom: 30px;
+  font-size: 1.1rem;
+}
+
+.button-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.btn {
+  border: none;
+  border-radius: 12px;
+  padding: 20px;
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 15px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  transition: transform 0.1s;
+}
+
+/* Button click animation */
+.btn:active {
+  transform: scale(0.95);
+}
+
+/* Specific Emergency Colors */
+.btn-fire { background-color: #d32f2f; }
+.btn-medical { background-color: #fbc02d; color: black; }
+.btn-security { background-color: #1976d2; }
+.btn-general { background-color: #616161; }
+
+.icon {
+  font-size: 2rem;
+}
+
+/* --- STAFF DASHBOARD STYLES --- */
+.dashboard-container {
+  width: 90%;
+  max-width: 600px;
+  background-color: #1e1e1e;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+
+.dash-title {
+  color: white;
+  margin-bottom: 5px;
+}
+
+.dash-subtitle {
+  color: #aaaaaa;
+  margin-top: 0;
+  margin-bottom: 20px;
+}
+
+.alert-list {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.alert-card {
+  background-color: #2c2c2c;
+  border-left: 5px solid #616161;
+  padding: 15px;
+  border-radius: 8px;
+  text-align: left;
+}
+
+.alert-card.critical {
+  border-left-color: #ff4d4d;
+  background-color: #3a1c1c; /* Slight red tint for danger */
+}
+
+.alert-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.badge {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-weight: bold;
+  font-size: 0.8rem;
+}
+
+.badge-fire { background-color: #d32f2f; color: white; }
+.badge-general { background-color: #616161; color: white; }
+
+.alert-text {
+  font-size: 1.1rem;
+  margin: 0 0 10px 0;
+  font-style: italic;
+}
+
+.location {
+  color: #bbbbbb;
+  font-weight: bold;
+}
+
+/* A button to switch views for testing */
+.switch-btn {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background-color: #333;
+  color: white;
+  border: 1px solid #555;
+  padding: 8px 16px;
+  border-radius: 20px;
+  cursor: pointer;
+}
+.switch-btn:hover { background-color: #444; }
