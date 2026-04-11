@@ -10,6 +10,8 @@ function GuestPage() {
   const [phase, setPhase] = useState('idle'); // idle → sending → confirmed → safe → evacuation
   const [aiInstruction, setAiInstruction] = useState('');
   const [responseTime, setResponseTime] = useState(null);
+  const [alertId, setAlertId] = useState(null);
+  const [alertStatus, setAlertStatus] = useState('active'); // active, acknowledged, resolved
   const [broadcastMsg, setBroadcastMsg] = useState('');
   const [headcount, setHeadcount] = useState(1);
   const [checkinStatus, setCheckinStatus] = useState('SAFE'); // 'SAFE' or 'DANGER'
@@ -42,6 +44,8 @@ function GuestPage() {
       const data = await res.json();
       setAiInstruction(data.guestInstruction || 'Stay calm. Help is on the way.');
       setResponseTime(data.estimatedResponse);
+      setAlertId(data.alertId);
+      setAlertStatus('active');
       setPhase('confirmed');
     } catch (error) {
       // Store locally if offline or fetch failed
@@ -89,9 +93,22 @@ function GuestPage() {
        setPhase('evacuation');
        setBroadcastMsg(data.message);
     };
+    const handleAlertUpdated = (updatedAlert) => {
+       if (updatedAlert.id === alertId) {
+          if (updatedAlert.status === 'resolved') {
+             setAlertStatus('resolved');
+          } else if (updatedAlert.acknowledgedBy) {
+             setAlertStatus('acknowledged');
+          }
+       }
+    };
     socket.on('mass_safety_prompt', handleMassPrompt);
-    return () => socket.off('mass_safety_prompt', handleMassPrompt);
-  }, [socket]);
+    socket.on('alert_updated', handleAlertUpdated);
+    return () => {
+       socket.off('mass_safety_prompt', handleMassPrompt);
+       socket.off('alert_updated', handleAlertUpdated);
+    };
+  }, [socket, alertId]);
 
   const handleMarkSafe = async () => {
     setPhase('safe');
@@ -170,8 +187,16 @@ function GuestPage() {
             <div style={styles.timeline}>
               <TimelineStep done label="Alert transmitted" sub="Received by system" />
               <TimelineStep done label="AI triage complete" sub="Severity assessed" />
-              <TimelineStep done={false} label="Staff dispatched" sub="En route to your location" />
-              <TimelineStep done={false} label="Crisis resolved" sub="Pending" />
+              <TimelineStep 
+                 done={alertStatus === 'acknowledged' || alertStatus === 'resolved'} 
+                 label="Staff dispatched" 
+                 sub="En route to your location" 
+              />
+              <TimelineStep 
+                 done={alertStatus === 'resolved'} 
+                 label="Crisis resolved" 
+                 sub="Pending" 
+              />
             </div>
 
             {/* Mark safe button / Headcount */}
@@ -198,6 +223,13 @@ function GuestPage() {
                 {checkinStatus === 'SAFE' ? '✓ MARK AS SAFE' : '⚠️ I NEED HELP'}
               </button>
             </div>
+            <button
+               onClick={() => setPhase('idle')}
+               style={{...styles.safeBtn, background: 'var(--bg-elevated)', color: 'var(--text-primary)', marginTop: '12px', padding: '10px'}}
+               className="mono"
+            >
+               ⟵ REPORT ANOTHER ISSUE
+            </button>
           </div>
         )}
 
@@ -252,6 +284,13 @@ function GuestPage() {
                 <>Emergency response teams have received your high-priority status.<br />Please try to stay as safe as possible.</>
               )}
             </p>
+            <button
+               onClick={() => setPhase('idle')}
+               style={{...styles.safeBtn, background: 'var(--bg-elevated)', color: 'var(--text-primary)', marginTop: '20px', padding: '10px', width: 'auto'}}
+               className="mono"
+            >
+               ⟵ REPORT ANOTHER ISSUE
+            </button>
           </div>
         )}
 

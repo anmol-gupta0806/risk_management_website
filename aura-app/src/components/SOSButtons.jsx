@@ -21,7 +21,7 @@ const EMERGENCY_TYPES = [
   },
   {
     type: 'SECURITY',
-    emoji: '🛡',
+    emoji: '👮',
     label: 'SECURITY',
     sub: 'Intruder, threat, suspicious',
     color: 'var(--info)',
@@ -44,6 +44,7 @@ function SOSButtons({ onSOS, loading }) {
   const [message, setMessage] = useState('');
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef(null);
+  const originalMessageRef = useRef('');
 
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -54,24 +55,20 @@ function SOSButtons({ onSOS, loading }) {
       recognition.lang = 'en-US';
 
       recognition.onresult = (event) => {
-        let currentTranscript = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          currentTranscript += event.results[i][0].transcript;
+        let finalTranscript = '';
+        for (let i = 0; i < event.results.length; i++) {
+          finalTranscript += event.results[i][0].transcript;
         }
-        setMessage((prev) => {
-          // If we want to replace or append, usually replacing current interim is hard without complex state.
-          // For simplicity, we just set the complete transcript of the session.
-          // Let's just append final results and display interim.
-          let finalTranscript = '';
-          for (let i = 0; i < event.results.length; i++) {
-            finalTranscript += event.results[i][0].transcript;
-          }
-          return finalTranscript;
-        });
+        setMessage(originalMessageRef.current + finalTranscript);
       };
 
       recognition.onerror = (event) => {
         console.error('Speech recognition error', event.error);
+        if (event.error === 'not-allowed') {
+          alert('Mic access denied. Please click the mic icon in your browser address bar and allow access.');
+        } else if (event.error !== 'no-speech') {
+          alert('Mic error: ' + event.error);
+        }
         setIsListening(false);
       };
 
@@ -84,13 +81,20 @@ function SOSButtons({ onSOS, loading }) {
   }, []);
 
   const toggleListening = () => {
-    if (isListening) {
-      recognitionRef.current?.stop();
+    try {
+      if (isListening) {
+        recognitionRef.current?.stop();
+        setIsListening(false);
+      } else {
+        // Save the current message before overwriting to append speech later
+        originalMessageRef.current = message ? message + ' ' : '';
+        recognitionRef.current?.start();
+        setIsListening(true);
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Microphone error: ' + e.message + '. Please ensure permissions are granted.');
       setIsListening(false);
-    } else {
-      setMessage(''); // Clear text when starting new dictation (optional, but helps keep it clean)
-      recognitionRef.current?.start();
-      setIsListening(true);
     }
   };
 

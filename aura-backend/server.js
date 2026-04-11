@@ -98,8 +98,50 @@ app.post('/api/alerts/report', async (req, res) => {
     activeAlerts.unshift(newAlert);
     console.log(`🚨 INCOMING ALERT [${newAlert.hotelId}]:`, newAlert);
 
-    // Broadcast the new alert to the specific hotel room
+    // Broadcast the new alert to the specific hotel room for staff dashboard
     io.to(newAlert.hotelId).emit('new_alert', newAlert);
+
+    // Determine if it affects all guests
+    const globalTypes = ['FIRE', 'EARTHQUAKE', 'CRISIS'];
+    let affectsAllGuests = globalTypes.includes(newAlert.type);
+
+    if (!affectsAllGuests && (newAlert.type === 'OTHER' || newAlert.message)) {
+        const msg = (newAlert.message || '').toLowerCase();
+        const massKeywords = ['earthquake', 'shooter', 'bomb', 'fire', 'crisis', 'terror', 'explosion', 'gas leak'];
+        
+        if (massKeywords.some(kw => msg.includes(kw))) {
+            affectsAllGuests = true;
+            console.log(`🧠 Local keyword system determined ${newAlert.type} is a MASS threat.`);
+        } else {
+            try {
+                const prompt = `You are a strict emergency response AI.
+Analyze the following threat report: "${newAlert.type}. Details: ${newAlert.message}".
+Determine if this threat is a MASS threat that endangers everyone in the building (like an earthquake, bomb threat, active shooter, large fire) or a PERSONAL threat that only affects the reporting individual (like a medical issue, a stalker).
+Reply with exactly one word: MASS or PERSONAL.`;
+
+                const response = await ai.models.generateContent({
+                    model: 'gemini-2.5-flash',
+                    contents: [prompt]
+                });
+                const answer = response.text.trim().toUpperCase();
+                
+                if (answer.includes('MASS')) {
+                    affectsAllGuests = true;
+                    console.log(`🧠 AI determined ${newAlert.type} is a MASS threat.`);
+                } else {
+                    console.log(`🧠 AI determined ${newAlert.type} is a PERSONAL threat.`);
+                }
+            } catch (err) {
+                console.error('Gemini classification error:', err);
+            }
+        }
+    }
+
+    if (affectsAllGuests) {
+        console.log(`📢 AUTO-BROADCAST [${newAlert.hotelId}]: Alert affects all guests, sending mass notification.`);
+        const massMsg = `EMERGENCY ALERT: ${newAlert.type === 'OTHER' ? newAlert.message : newAlert.type} reported. Please stay alert and await further instructions.`;
+        io.to(newAlert.hotelId).emit('mass_safety_prompt', { message: massMsg, timestamp: new Date().toISOString() });
+    }
 
     let guestInstruction = `Your ${newAlert.type} alert has been received. Please stay safe.`;
 
@@ -116,8 +158,9 @@ app.post('/api/alerts/report', async (req, res) => {
 
             const prompt = `You are a strict emergency response AI. You have a hotel floorplan/map. 
 The current emergency is a ${newAlert.type} located at ${newAlert.location}. 
-Determine the safest evacuation instructions for the guest located at ${newAlert.location}. 
-Tell them where to go and what to avoid. Maximum 2 extremely clear sentences.`;
+If the emergency is MEDICAL or does not require evacuation, DO NOT tell the guest to evacuate. Instead, provide instructions on how to stay safe, apply basic first aid, and wait for emergency responders. 
+If the emergency requires evacuation (like FIRE), determine the safest evacuation instructions for the guest located at ${newAlert.location}, telling them where to go and what to avoid. 
+Maximum 2 extremely clear sentences.`;
 
             const response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
@@ -135,7 +178,8 @@ Tell them where to go and what to avoid. Maximum 2 extremely clear sentences.`;
     res.json({ 
         success: true,
         guestInstruction,
-        estimatedResponse: "2"
+        estimatedResponse: "2",
+        alertId: newAlert.id
     });
 });
 
@@ -201,6 +245,11 @@ app.post('/api/iot/sensor', (req, res) => {
         activeAlerts.unshift(newAlert);
         console.log(`🤖 IOT SENSOR ALERT [${hotelId}]:`, newAlert);
         io.to(hotelId).emit('new_alert', newAlert);
+
+        // IoT sensors (Heat, Smoke) indicate a fire, which affects all guests
+        console.log(`📢 AUTO-BROADCAST [${hotelId}]: IoT sensor triggered, sending mass notification.`);
+        const massMsg = `EMERGENCY ALERT: Sensor detected ${sensorType} emergency. Please stay alert and await further instructions.`;
+        io.to(hotelId).emit('mass_safety_prompt', { message: massMsg, timestamp: new Date().toISOString() });
     }
     
     res.json({ success: true, triggered: isEmergency });
