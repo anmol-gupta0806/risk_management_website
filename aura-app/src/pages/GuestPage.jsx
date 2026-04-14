@@ -122,15 +122,6 @@ function GuestPage() {
           }
        }
     };
-    const handleAlertUpdated = (updatedAlert) => {
-       if (updatedAlert.id === alertId) {
-          if (updatedAlert.status === 'resolved') {
-             setAlertStatus('resolved');
-          } else if (updatedAlert.acknowledgedBy) {
-             setAlertStatus('acknowledged');
-          }
-       }
-    };
     socket.on('mass_safety_prompt', handleMassPrompt);
     socket.on('alert_updated', handleAlertUpdated);
     return () => {
