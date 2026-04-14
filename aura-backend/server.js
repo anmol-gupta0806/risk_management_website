@@ -49,6 +49,10 @@ io.on('connection', (socket) => {
 
 // --- ROUTES ---
 
+app.get('/', (req, res) => {
+    res.send('Aura Backend is ALIVE and running!');
+});
+
 app.get('/api/health', (req, res) => {
     res.json({ status: "Aura Backend is ALIVE and running!" });
 });
