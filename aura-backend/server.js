@@ -14,10 +14,10 @@ const server = http.createServer(app);
 
 // Initialize Socket.io
 const io = new Server(server, {
-  cors: {
-    origin: '*', // Allow connections from frontend
-    methods: ['GET', 'POST']
-  }
+    cors: {
+        origin: '*', // Allow connections from frontend
+        methods: ['GET', 'POST']
+    }
 });
 
 // Middleware
@@ -28,22 +28,23 @@ app.use(express.urlencoded({ limit: '10mb', extended: true }));
 // In-memory arrays
 let activeAlerts = [];
 let hotels = []; // { hotelId, name, passcode, mapBase64 }
+let recentSOSPerHotel = {}; // Tracks emotional contagion timestamps { hotelId: [Date.now()] }
 
 // Pre-fill a demo hotel for convenience if needed, but let's stick to empty per requirements.
 // You must register a hotel first before using the system.
 
 // Socket connection listener
 io.on('connection', (socket) => {
-  console.log('✅ A client connected:', socket.id);
-  
-  socket.on('join_hotel', (hotelId) => {
-    socket.join(hotelId);
-    console.log(`🔌 Client ${socket.id} joined hotel room: ${hotelId}`);
-  });
+    console.log('✅ A client connected:', socket.id);
 
-  socket.on('disconnect', () => {
-    console.log('❌ A client disconnected:', socket.id);
-  });
+    socket.on('join_hotel', (hotelId) => {
+        socket.join(hotelId);
+        console.log(`🔌 Client ${socket.id} joined hotel room: ${hotelId}`);
+    });
+
+    socket.on('disconnect', () => {
+        console.log('❌ A client disconnected:', socket.id);
+    });
 });
 
 // --- ROUTES ---
@@ -68,7 +69,7 @@ app.post('/api/hotels/register', (req, res) => {
 
 app.post('/api/alerts/report', async (req, res) => {
     const alertData = req.body;
-    
+
     if (!alertData.hotelId) return res.status(400).json({ success: false, message: 'Missing hotelId' });
 
     const newAlert = {
@@ -87,7 +88,7 @@ app.post('/api/alerts/report', async (req, res) => {
 
     // Criticality Check
     const sameTypeAlerts = activeAlerts.filter(a => a.hotelId === newAlert.hotelId && a.type === newAlert.type && !a.acknowledgedBy);
-    if (sameTypeAlerts.length >= 3) { 
+    if (sameTypeAlerts.length >= 3) {
         // 3 existing + 1 new = 4 total
         newAlert.isSevere = true;
         sameTypeAlerts.forEach(a => a.isSevere = true);
@@ -98,8 +99,33 @@ app.post('/api/alerts/report', async (req, res) => {
     activeAlerts.unshift(newAlert);
     console.log(`🚨 INCOMING ALERT [${newAlert.hotelId}]:`, newAlert);
 
-    // Broadcast the new alert to the specific hotel room
+    // Broadcast the new alert to the specific hotel room for staff dashboard
     io.to(newAlert.hotelId).emit('new_alert', newAlert);
+
+    // 🧠 Emotional Contagion Interception
+    if (!recentSOSPerHotel[newAlert.hotelId]) recentSOSPerHotel[newAlert.hotelId] = [];
+    const now = Date.now();
+    recentSOSPerHotel[newAlert.hotelId].push(now);
+    // Filter out alerts older than 60 seconds
+    recentSOSPerHotel[newAlert.hotelId] = recentSOSPerHotel[newAlert.hotelId].filter(t => now - t <= 60000);
+    
+    if (recentSOSPerHotel[newAlert.hotelId].length >= 5) {
+        console.log(`🧠 EMOTIONAL CONTAGION INTERCEPTED [${newAlert.hotelId}]: Escalation stopped.`);
+        const calmMsg = "STAFF ARE RESPONDING. Your evacuation route is clear. Please move calmly and do not panic. We have the situation under control.";
+        io.to(newAlert.hotelId).emit('mass_safety_prompt', { message: calmMsg, timestamp: new Date().toISOString(), type: 'EMERGENCY' });
+        // Reset to prevent spamming
+        recentSOSPerHotel[newAlert.hotelId] = [];
+    }
+
+    // Determine if it affects all guests
+    const globalTypes = ['FIRE', 'EARTHQUAKE', 'CRISIS'];
+    const affectsAllGuests = globalTypes.includes(newAlert.type);
+
+    if (affectsAllGuests) {
+        console.log(`📢 AUTO-BROADCAST [${newAlert.hotelId}]: Alert affects all guests, sending mass notification.`);
+        const massMsg = `EMERGENCY ALERT: ${newAlert.type} reported. Please stay alert and await further instructions.`;
+        io.to(newAlert.hotelId).emit('mass_safety_prompt', { message: massMsg, timestamp: new Date().toISOString() });
+    }
 
     let guestInstruction = `Your ${newAlert.type} alert has been received. Please stay safe.`;
 
@@ -116,8 +142,9 @@ app.post('/api/alerts/report', async (req, res) => {
 
             const prompt = `You are a strict emergency response AI. You have a hotel floorplan/map. 
 The current emergency is a ${newAlert.type} located at ${newAlert.location}. 
-Determine the safest evacuation instructions for the guest located at ${newAlert.location}. 
-Tell them where to go and what to avoid. Maximum 2 extremely clear sentences.`;
+If the emergency is MEDICAL or does not require evacuation, DO NOT tell the guest to evacuate. Instead, provide instructions on how to stay safe, apply basic first aid, and wait for emergency responders. 
+If the emergency requires evacuation (like FIRE), determine the safest evacuation instructions for the guest located at ${newAlert.location}, telling them where to go and what to avoid. 
+Maximum 2 extremely clear sentences.`;
 
             const response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
@@ -132,11 +159,94 @@ Tell them where to go and what to avoid. Maximum 2 extremely clear sentences.`;
         }
     }
 
-    res.json({ 
+    res.json({
         success: true,
         guestInstruction,
-        estimatedResponse: "2"
+        estimatedResponse: "2",
+        alertId: newAlert.id
     });
+
+    // 🧠 ADVANCED AI: Start Triangulation & Survival Hooks asynchronously
+    (async () => {
+        try {
+            let didUpdate = false;
+
+            // 1. SURVIVAL WINDOW ESTIMATOR (For FIRE)
+            if (newAlert.type === 'FIRE') {
+                try {
+                    const prompt = `You are an expert fire spread behavioral modeler. The building has reported a FIRE emergency at location: "${newAlert.location}".
+Using standard fire spread rates (roughly 1 floor per 3 minutes), estimate how many seconds the guests in this exact location have until evacuation becomes life-threatening.
+Return ONLY a valid JSON object matching exactly this format: {"windowSeconds": number}. Do not include markdown or other text.`;
+                    
+                    const response = await ai.models.generateContent({
+                        model: 'gemini-2.5-flash',
+                        contents: prompt
+                    });
+                    
+                    let text = response.text.trim();
+                    if (text.startsWith('```json')) text = text.substring(7, text.length - 3).trim();
+                    else if (text.startsWith('```')) text = text.substring(3, text.length - 3).trim();
+                    
+                    const data = JSON.parse(text);
+                    if (data.windowSeconds) {
+                        newAlert.survivalWindowSeconds = data.windowSeconds;
+                        didUpdate = true;
+                    }
+                } catch(e) { console.error("Survival Window Error:", e); }
+            }
+
+            // 2. CROSS-REPORT TRIANGULATION
+            const sixtySecondsAgo = Date.now() - 60000;
+            const recentSimilarAlerts = activeAlerts.filter(a => a.hotelId === newAlert.hotelId && a.createdAt >= sixtySecondsAgo);
+            
+            if (recentSimilarAlerts.length >= 2) {
+                try {
+                    const reportsText = recentSimilarAlerts.map(a => `- Location: ${a.location}, Message: "${a.message}"`).join('\n');
+                    const prompt = `You are an Emergency Triage AI analyzing multiple incoming guest reports within a 60-second window to detect contradictions or false alarms.
+Recent reports:
+${reportsText}
+
+Analyze if these reports are consistent or if there is a stark contradiction (e.g., one says fire, another says prank, or drastically different locations). 
+Return ONLY a valid JSON object matching exactly this format:
+{
+  "confidenceScore": number (0-100),
+  "isContradictory": boolean,
+  "analysis": "1 sentence reasoning"
+}`;
+                    const response = await ai.models.generateContent({
+                        model: 'gemini-2.5-flash',
+                        contents: prompt
+                    });
+                    
+                    let text = response.text.trim();
+                    if (text.startsWith('```json')) text = text.substring(7, text.length - 3).trim();
+                    else if (text.startsWith('```')) text = text.substring(3, text.length - 3).trim();
+                    
+                    const data = JSON.parse(text);
+                    if (data.confidenceScore !== undefined) {
+                        newAlert.triangulation = {
+                            confidenceScore: data.confidenceScore,
+                            isContradictory: data.isContradictory,
+                            analysis: data.analysis
+                        };
+                        didUpdate = true;
+                    }
+                } catch(e) { console.error("Triangulation Error:", e); }
+            }
+
+            if (didUpdate) {
+                const target = activeAlerts.find(a => a.id === newAlert.id);
+                if (target) {
+                    target.survivalWindowSeconds = newAlert.survivalWindowSeconds;
+                    target.triangulation = newAlert.triangulation;
+                    io.to(newAlert.hotelId).emit('alert_updated', target);
+                }
+            }
+
+        } catch (err) {
+            console.error("Async AI operations failed", err);
+        }
+    })();
 });
 
 app.post('/api/alerts/silent', (req, res) => {
@@ -166,12 +276,12 @@ app.post('/api/alerts/silent', (req, res) => {
 
 app.post('/api/iot/sensor', (req, res) => {
     const { hotelId, sensorType, reading, threshold, location } = req.body;
-    
+
     if (!hotelId) return res.status(400).json({ success: false, message: 'Missing hotelId' });
 
     let isEmergency = false;
     let message = '';
-    
+
     // Simulate threshold check, e.g., if reading > threshold
     if (reading > threshold) {
         if (sensorType === 'HEAT') {
@@ -197,19 +307,24 @@ app.post('/api/iot/sensor', (req, res) => {
             message: message,
             hotelId: hotelId
         };
-        
+
         activeAlerts.unshift(newAlert);
         console.log(`🤖 IOT SENSOR ALERT [${hotelId}]:`, newAlert);
         io.to(hotelId).emit('new_alert', newAlert);
+
+        // IoT sensors (Heat, Smoke) indicate a fire, which affects all guests
+        console.log(`📢 AUTO-BROADCAST [${hotelId}]: IoT sensor triggered, sending mass notification.`);
+        const massMsg = `EMERGENCY ALERT: Sensor detected ${sensorType} emergency. Please stay alert and await further instructions.`;
+        io.to(hotelId).emit('mass_safety_prompt', { message: massMsg, timestamp: new Date().toISOString() });
     }
-    
+
     res.json({ success: true, triggered: isEmergency });
 });
 
 // NEW: Gemini Evacuation Routing Endpoint
 app.post('/api/intelligence/evacuation', async (req, res) => {
     const { hotelId, incidentDetails } = req.body;
-    
+
     if (!hotelId || !incidentDetails) {
         return res.status(400).json({ success: false, message: 'Missing hotelId or incidentDetails' });
     }
@@ -222,7 +337,7 @@ app.post('/api/intelligence/evacuation', async (req, res) => {
         // Extract the mime type and the raw base64 data
         let mimeType = 'image/jpeg';
         let base64Data = hotel.mapBase64;
-        
+
         const matches = hotel.mapBase64.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
         if (matches && matches.length === 3) {
             mimeType = matches[1];
@@ -272,7 +387,7 @@ app.post('/api/safety/checkin', (req, res) => {
 app.get('/api/alerts', (req, res) => {
     const { hotelId } = req.query;
     if (!hotelId) return res.status(400).json({ success: false, message: 'Missing hotelId' });
-    
+
     // Cleanup old resolved alerts (older than 2 hours)
     const TWO_HOURS = 2 * 60 * 60 * 1000;
     const now = Date.now();
@@ -303,24 +418,51 @@ app.post('/api/alerts/acknowledge', (req, res) => {
     const { id, staffName } = req.body;
     const alert = activeAlerts.find(a => a.id === id);
     if (!alert) return res.status(404).json({ success: false, message: 'Alert not found' });
-    
+
     alert.acknowledgedBy = staffName || 'Staff';
     alert.isSevere = false; // Acknowledgement de-escalates severity
     console.log(`👮 Alert ${id} acknowledged by ${staffName}`);
-    
+
     io.to(alert.hotelId).emit('alert_updated', alert);
     res.json({ success: true, message: "Alert acknowledged", alert });
+});
+
+// NEW: Dead Man's Switch - Dispatch Staff
+app.post('/api/alerts/dispatch', (req, res) => {
+    const { id, staffName } = req.body;
+    const alert = activeAlerts.find(a => a.id === id);
+    if (!alert) return res.status(404).json({ success: false, message: 'Alert not found' });
+    
+    alert.dispatchedTo = staffName;
+    alert.lastPingTime = Date.now();
+    alert.unresponsive = false;
+    console.log(`🛡️ Staff ${staffName} dispatched to alert ${id}`);
+    
+    io.to(alert.hotelId).emit('alert_updated', alert);
+    res.json({ success: true, alert });
+});
+
+// NEW: Dead Man's Switch - Alive Ping
+app.post('/api/alerts/ping', (req, res) => {
+    const { id, staffName } = req.body;
+    const alert = activeAlerts.find(a => a.id === id && a.dispatchedTo === staffName);
+    if (!alert) return res.status(404).json({ success: false, message: 'Alert mapping not found' });
+
+    alert.lastPingTime = Date.now();
+    alert.unresponsive = false;
+    io.to(alert.hotelId).emit('alert_updated', alert);
+    res.json({ success: true });
 });
 
 // AUTH ROUTES
 app.post('/api/auth/staff', (req, res) => {
     const { hotelId, passcode, staffName } = req.body;
     const hotel = hotels.find(h => h.hotelId === hotelId);
-    
+
     if (!hotel) {
         return res.status(404).json({ success: false, message: 'Hotel Environment Not Found' });
     }
-    
+
     if (hotel.passcode === passcode) {
         res.json({ success: true, token: 'staff-token-1234', hotelName: hotel.name, hotelId, name: staffName || 'Staff' });
     } else {
@@ -333,7 +475,7 @@ app.post('/api/auth/guest', (req, res) => {
     if (!name || !room || !hotelId) {
         return res.status(400).json({ success: false, message: 'Hotel ID, Name and Room required' });
     }
-    
+
     const hotel = hotels.find(h => h.hotelId === hotelId);
     if (!hotel) {
         return res.status(404).json({ success: false, message: 'Hotel Environment Not Found' });
@@ -348,3 +490,27 @@ const PORT = 3000;
 server.listen(PORT, () => {
     console.log(`🚀 Server is running on http://localhost:${PORT}`);
 });
+
+// START DEAD MAN'S SWITCH MONITOR
+setInterval(() => {
+    const now = Date.now();
+    activeAlerts.forEach(alert => {
+        // Staff has 90 seconds to tap "I'm OK", otherwise escalating
+        if (alert.status !== 'resolved' && alert.dispatchedTo && !alert.unresponsive) {
+            if (now - alert.lastPingTime > 90000) {
+                alert.unresponsive = true;
+                alert.isSevere = true;
+                
+                console.log(`☠️ DEAD MAN'S SWITCH TRIGGERED: ${alert.dispatchedTo} is unresponsive for alert ${alert.id}`);
+                
+                // Broadcast backup request
+                io.to(alert.hotelId).emit('mass_safety_prompt', { 
+                    message: `CRITICAL STAFF ALERT: Responder ${alert.dispatchedTo} is unresponsive near ${alert.location}. Backup required immediately.`, 
+                    timestamp: new Date().toISOString(),
+                    type: 'EMERGENCY'
+                });
+                io.to(alert.hotelId).emit('alert_updated', alert);
+            }
+        }
+    });
+}, 5000);

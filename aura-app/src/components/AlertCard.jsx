@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 
-export default function AlertCard({ alert, onResolve, onAcknowledge }) {
+export default function AlertCard({ alert, onResolve, onAcknowledge, onDispatch }) {
   const [progress, setProgress] = useState(0);
+  const [timeLeftStr, setTimeLeftStr] = useState('');
 
   // Maximum time for crisis bar is 120 seconds
   const MAX_CRISIS_TIME_MS = 120000; 
@@ -23,10 +24,22 @@ export default function AlertCard({ alert, onResolve, onAcknowledge }) {
 
     const interval = setInterval(() => {
       setProgress(calculateProgress());
+      
+      if (alert.survivalWindowSeconds && alert.status !== 'resolved') {
+         const expiresAt = alert.createdAt + (alert.survivalWindowSeconds * 1000);
+         const diff = expiresAt - Date.now();
+         if (diff > 0) {
+             const mins = Math.floor(diff / 60000);
+             const secs = Math.floor((diff % 60000) / 1000);
+             setTimeLeftStr(`${mins} min ${secs} sec`);
+         } else {
+             setTimeLeftStr('0 sec (CRITICAL DANGER)');
+         }
+      }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [alert.createdAt, alert.acknowledgedBy]);
+  }, [alert.createdAt, alert.acknowledgedBy, alert.survivalWindowSeconds, alert.status]);
 
   const isIoT = alert.type === 'IOT_SENSOR';
   // Compute styling traits
@@ -41,6 +54,10 @@ export default function AlertCard({ alert, onResolve, onAcknowledge }) {
     cardBg = 'rgba(255, 255, 255, 0.05)';
     cardBorder = 'var(--border-subtle)';
     badgeBg = 'var(--text-muted)';
+  } else if (alert.unresponsive) {
+    cardBg = 'rgba(255, 0, 0, 0.15)'; // Strong red for unresponsive
+    cardBorder = '#ff0000';
+    badgeBg = '#ff0000';
   } else if (isAcknowledged) {
     cardBg = 'rgba(0, 255, 128, 0.05)'; // slight green tint
     cardBorder = 'var(--safe)';
@@ -110,6 +127,25 @@ export default function AlertCard({ alert, onResolve, onAcknowledge }) {
       fontSize: '0.75rem',
       fontWeight: 'bold'
     },
+    dispatchBtn: {
+      background: 'transparent',
+      border: '1px solid currentColor',
+      color: 'var(--info, #3b82f6)',
+      padding: '6px 12px',
+      cursor: 'pointer',
+      borderRadius: 'var(--radius-sm)',
+      fontFamily: 'var(--font-mono)',
+      fontSize: '0.75rem',
+      fontWeight: 'bold',
+      transition: 'var(--transition)'
+    },
+    unresponsiveBadge: {
+      color: '#ff0000',
+      fontFamily: 'var(--font-mono)',
+      fontSize: '0.75rem',
+      fontWeight: 'bold',
+      animation: 'blink 1s infinite'
+    },
     progressBarContainer: {
       height: '4px',
       background: 'rgba(255,255,255,0.1)',
@@ -123,6 +159,20 @@ export default function AlertCard({ alert, onResolve, onAcknowledge }) {
       width: `${progress}%`,
       background: isAcknowledged ? 'var(--safe)' : isSevere ? 'var(--critical)' : 'var(--warning)',
       transition: 'width 1s linear, background 0.3s ease',
+    },
+    triangulationBox: {
+      background: 'rgba(0,0,0,0.2)',
+      border: `1px solid ${alert.triangulation?.isContradictory ? 'var(--critical)' : 'var(--safe)'}`,
+      borderRadius: 'var(--radius-md)',
+      padding: '10px',
+      marginBottom: '16px'
+    },
+    survivalBox: {
+      marginBottom: '16px',
+      padding: '8px',
+      background: 'rgba(255,0,0,0.1)',
+      borderLeft: '4px solid var(--critical)',
+      borderRadius: '4px'
     }
   };
 
@@ -136,6 +186,29 @@ export default function AlertCard({ alert, onResolve, onAcknowledge }) {
         <div style={styles.time} className="mono">{alert.time}</div>
       </div>
       <p style={styles.message}>"{alert.message || 'No additional details provided by guest.'}"</p>
+      
+      {alert.triangulation && (
+        <div style={styles.triangulationBox}>
+            <div style={{display:'flex', justifyContent:'space-between', marginBottom:'6px'}}>
+               <span className="mono" style={{fontSize:'0.7rem', color: alert.triangulation.isContradictory ? 'var(--critical)' : 'var(--safe)', fontWeight:'bold'}}>
+                  {alert.triangulation.isContradictory ? '⚠️ CONTRADICTION DETECTED: Verify Before Evacuation' : '✓ CORROBORATED REPORT'}
+               </span>
+               <span className="mono" style={{fontSize:'0.7rem', color: 'var(--text-primary)'}}>
+                  Score: {alert.triangulation.confidenceScore}%
+               </span>
+            </div>
+            <p style={{fontFamily:'var(--font-body)', fontSize:'0.8rem', color:'var(--text-secondary)', margin:0}}>{alert.triangulation.analysis}</p>
+        </div>
+      )}
+
+      {alert.survivalWindowSeconds && alert.status !== 'resolved' && (
+        <div style={styles.survivalBox}>
+          <span className="mono" style={{color: 'var(--critical)', fontSize:'0.75rem', fontWeight:'bold', animation:'blink 1s infinite'}}>
+            ESTIMATED SAFE WINDOW: {timeLeftStr}
+          </span>
+        </div>
+      )}
+
       <div style={styles.footer}>
         <div style={styles.location}>📍 {alert.location} | ID: {alert.guestId}</div>
         <div style={styles.btnGroup}>
@@ -147,12 +220,32 @@ export default function AlertCard({ alert, onResolve, onAcknowledge }) {
               TAKE RESPONSIBILITY
             </button>
           )}
-          {alert.status !== 'resolved' && isAcknowledged && (
-            <span style={styles.ackText}>✓ responsibility taken by {alert.acknowledgedBy}</span>
+
+          {alert.status !== 'resolved' && isAcknowledged && !alert.dispatchedTo && (
+            <button 
+              style={styles.dispatchBtn} 
+              onClick={() => onDispatch && onDispatch(alert.id)}
+            >
+              🚀 DISPATCH ME
+            </button>
           )}
+
+          {alert.status !== 'resolved' && alert.unresponsive && (
+            <span style={styles.unresponsiveBadge}>⚠️ {alert.dispatchedTo} UNRESPONSIVE</span>
+          )}
+
+          {alert.status !== 'resolved' && isAcknowledged && alert.dispatchedTo && !alert.unresponsive && (
+            <span style={styles.ackText}>✓ {alert.dispatchedTo} deployed</span>
+          )}
+          
+          {alert.status !== 'resolved' && isAcknowledged && !alert.dispatchedTo && (
+            <span style={{...styles.ackText, color: 'var(--text-muted)'}}>ack by {alert.acknowledgedBy}</span>
+          )}
+
           {alert.status === 'resolved' && (
-            <span style={styles.ackText}>✓ resolved by {alert.resolvedBy || alert.acknowledgedBy || 'Staff'}</span>
+            <span style={{...styles.ackText, color: 'var(--text-muted)'}}>✓ resolved by {alert.resolvedBy || alert.acknowledgedBy || 'Staff'}</span>
           )}
+          
           {alert.status !== 'resolved' && (
             <button 
               style={styles.resolveBtn} 

@@ -10,9 +10,13 @@ function GuestPage() {
   const [phase, setPhase] = useState('idle'); // idle → sending → confirmed → safe → evacuation
   const [aiInstruction, setAiInstruction] = useState('');
   const [responseTime, setResponseTime] = useState(null);
+  const [alertId, setAlertId] = useState(null);
+  const [alertStatus, setAlertStatus] = useState('active'); // active, acknowledged, resolved
   const [broadcastMsg, setBroadcastMsg] = useState('');
+  const [incidentType, setIncidentType] = useState(null);
   const [headcount, setHeadcount] = useState(1);
   const [checkinStatus, setCheckinStatus] = useState('SAFE'); // 'SAFE' or 'DANGER'
+  const [showFirePopup, setShowFirePopup] = useState(false);
   const { socket } = useSocket(user?.hotelId);
 
   // If user is somehow missing during render while protected route catches up
@@ -24,6 +28,7 @@ function GuestPage() {
 
   const handleSOS = async (emergencyType, rawMessage) => {
     setPhase('sending');
+    setIncidentType(emergencyType);
     const payload = {
       emergencyType,
       rawMessage,
@@ -42,6 +47,8 @@ function GuestPage() {
       const data = await res.json();
       setAiInstruction(data.guestInstruction || 'Stay calm. Help is on the way.');
       setResponseTime(data.estimatedResponse);
+      setAlertId(data.alertId);
+      setAlertStatus('active');
       setPhase('confirmed');
     } catch (error) {
       // Store locally if offline or fetch failed
@@ -85,13 +92,43 @@ function GuestPage() {
 
   useEffect(() => {
     if (!socket) return;
-    const handleMassPrompt = (data) => {
+    const handleMassPrompt = async (data) => {
        setPhase('evacuation');
        setBroadcastMsg(data.message);
+       if (data.type) setIncidentType(data.type);
+       
+       if (data.type) {
+         try {
+           const res = await fetch(`${API}/api/intelligence/evacuation`, {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify({ hotelId: user?.hotelId, incidentDetails: data.type, guestRoom: GUEST_ROOM })
+           });
+           const routeData = await res.json();
+           if (routeData.instruction) {
+             setBroadcastMsg(data.message + "\n\nYOUR EVACUATION ROUTE:\n" + routeData.instruction);
+           }
+         } catch (e) {
+             console.error("Failed to fetch evacuation route", e);
+         }
+       }
+    };
+    const handleAlertUpdated = (updatedAlert) => {
+       if (updatedAlert.id === alertId) {
+          if (updatedAlert.status === 'resolved') {
+             setAlertStatus('resolved');
+          } else if (updatedAlert.acknowledgedBy) {
+             setAlertStatus('acknowledged');
+          }
+       }
     };
     socket.on('mass_safety_prompt', handleMassPrompt);
-    return () => socket.off('mass_safety_prompt', handleMassPrompt);
-  }, [socket]);
+    socket.on('alert_updated', handleAlertUpdated);
+    return () => {
+       socket.off('mass_safety_prompt', handleMassPrompt);
+       socket.off('alert_updated', handleAlertUpdated);
+    };
+  }, [socket, alertId]);
 
   const handleMarkSafe = async () => {
     setPhase('safe');
@@ -108,6 +145,14 @@ function GuestPage() {
       }),
     }).catch(() => {});
   };
+
+  useEffect(() => {
+    if (headcount > 5 && incidentType === 'FIRE') {
+      setShowFirePopup(true);
+    } else {
+      setShowFirePopup(false);
+    }
+  }, [headcount, incidentType]);
 
   return (
     <div style={styles.page}>
@@ -170,8 +215,16 @@ function GuestPage() {
             <div style={styles.timeline}>
               <TimelineStep done label="Alert transmitted" sub="Received by system" />
               <TimelineStep done label="AI triage complete" sub="Severity assessed" />
-              <TimelineStep done={false} label="Staff dispatched" sub="En route to your location" />
-              <TimelineStep done={false} label="Crisis resolved" sub="Pending" />
+              <TimelineStep 
+                 done={alertStatus === 'acknowledged' || alertStatus === 'resolved'} 
+                 label="Staff dispatched" 
+                 sub="En route to your location" 
+              />
+              <TimelineStep 
+                 done={alertStatus === 'resolved'} 
+                 label="Crisis resolved" 
+                 sub="Pending" 
+              />
             </div>
 
             {/* Mark safe button / Headcount */}
@@ -198,6 +251,13 @@ function GuestPage() {
                 {checkinStatus === 'SAFE' ? '✓ MARK AS SAFE' : '⚠️ I NEED HELP'}
               </button>
             </div>
+            <button
+               onClick={() => setPhase('idle')}
+               style={{...styles.safeBtn, background: 'var(--bg-elevated)', color: 'var(--text-primary)', marginTop: '12px', padding: '10px'}}
+               className="mono"
+            >
+               ⟵ REPORT ANOTHER ISSUE
+            </button>
           </div>
         )}
 
@@ -252,10 +312,33 @@ function GuestPage() {
                 <>Emergency response teams have received your high-priority status.<br />Please try to stay as safe as possible.</>
               )}
             </p>
+            <button
+               onClick={() => setPhase('idle')}
+               style={{...styles.safeBtn, background: 'var(--bg-elevated)', color: 'var(--text-primary)', marginTop: '20px', padding: '10px', width: 'auto'}}
+               className="mono"
+            >
+               ⟵ REPORT ANOTHER ISSUE
+            </button>
           </div>
         )}
 
       </div>
+
+      {showFirePopup && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+          <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--critical)', borderRadius: '12px', padding: '30px', textAlign: 'center', maxWidth: '350px', boxShadow: '0 0 30px rgba(255,59,59,0.3)' }}>
+            <div style={{ fontSize: '3rem', marginBottom: '10px', animation: 'blink 1s infinite' }}>🚨</div>
+            <h2 className="display" style={{ color: 'var(--critical)', marginBottom: '10px' }}>LARGE GROUP DISCOVERED</h2>
+            <p className="mono" style={{ color: 'white', marginBottom: '20px', fontSize: '0.85rem', lineHeight: '1.5' }}>
+              We noticed a group size greater than 5 during a active fire threat. Please call the fire emergency number immediately!
+            </p>
+            <a href="tel:112" style={{ ...styles.safeBtn, background: 'var(--critical)', textDecoration: 'none', display: 'inline-block', boxSizing: 'border-box' }} className="display">
+              📞 CALL 112 NOW
+            </a>
+            <button onClick={() => setShowFirePopup(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', marginTop: '15px', cursor: 'pointer', textDecoration: 'underline' }} className="mono">Dismiss</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

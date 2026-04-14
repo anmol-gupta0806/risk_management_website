@@ -18,6 +18,10 @@ export default function StaffPage() {
   const [aiDraft, setAiDraft] = useState('');
   const [drafting, setDrafting] = useState(false);
 
+  // Dead Man Switch State
+  const [activeDispatchId, setActiveDispatchId] = useState(null);
+  const [timeLeft, setTimeLeft] = useState(90);
+
   // Fetch initial data
   useEffect(() => {
     if (!user?.hotelId) return;
@@ -43,7 +47,23 @@ export default function StaffPage() {
     };
 
     const handleAlertUpdated = (updatedAlert) => {
-      setAlerts(prev => prev.map(a => a.id === updatedAlert.id ? updatedAlert : a));
+      setAlerts(prev => {
+         const newAlerts = prev.map(a => a.id === updatedAlert.id ? updatedAlert : a);
+         
+         // If a staff is marked unresponsive, maybe we want to play an alarm locally? (skipped for now)
+         
+         // Update local active dispatch check
+         const myName = user?.name || 'Staff';
+         const myDispatch = newAlerts.find(a => a.status !== 'resolved' && a.dispatchedTo === myName && !a.unresponsive);
+         if (myDispatch && !activeDispatchId) {
+             setActiveDispatchId(myDispatch.id);
+             setTimeLeft(90);
+         } else if (!myDispatch && activeDispatchId) {
+             setActiveDispatchId(null);
+         }
+
+         return newAlerts;
+      });
     };
 
     const handleCriticalityEscalated = (data) => {
@@ -65,7 +85,15 @@ export default function StaffPage() {
       socket.off('criticality_escalated', handleCriticalityEscalated);
       socket.off('guest_safe', handleGuestSafe);
     };
-  }, [socket]);
+  }, [socket, activeDispatchId, user?.name]);
+
+  useEffect(() => {
+    if (!activeDispatchId) return;
+    const interval = setInterval(() => {
+      setTimeLeft(prev => prev > 0 ? prev - 1 : 0);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [activeDispatchId]);
 
   const handleResolve = async (id) => {
     try {
@@ -88,6 +116,34 @@ export default function StaffPage() {
         body: JSON.stringify({ id, staffName: user?.name || 'Staff' })
       });
       // Updating will happen via socket 'alert_updated'
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDispatch = async (id) => {
+    try {
+      await fetch(`${API}/api/alerts/dispatch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, staffName: user?.name || 'Staff' })
+      });
+      setActiveDispatchId(id);
+      setTimeLeft(90);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handlePingAlive = async () => {
+    if (!activeDispatchId) return;
+    try {
+      await fetch(`${API}/api/alerts/ping`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: activeDispatchId, staffName: user?.name || 'Staff' })
+      });
+      setTimeLeft(90);
     } catch (err) {
       console.error(err);
     }
@@ -198,7 +254,7 @@ export default function StaffPage() {
               <div style={styles.emptyState} className="mono">NO ACTIVE INCIDENTS. SYSTEM NOMINAL.</div>
             ) : (
               alerts.filter(a => a.status !== 'resolved').map(a => (
-                <AlertCard key={a.id} alert={a} onResolve={handleResolve} onAcknowledge={handleAcknowledge} />
+                <AlertCard key={a.id} alert={a} onResolve={handleResolve} onAcknowledge={handleAcknowledge} onDispatch={handleDispatch} />
               ))
             )}
           </div>
@@ -213,7 +269,7 @@ export default function StaffPage() {
               <div style={styles.emptyState} className="mono">NO RECENT RESOLVED INCIDENTS.</div>
             ) : (
               alerts.filter(a => a.status === 'resolved').map(a => (
-                <AlertCard key={a.id} alert={a} onResolve={handleResolve} onAcknowledge={handleAcknowledge} />
+                <AlertCard key={a.id} alert={a} onResolve={handleResolve} onAcknowledge={handleAcknowledge} onDispatch={handleDispatch} />
               ))
             )}
           </div>
@@ -280,6 +336,21 @@ export default function StaffPage() {
         </div>
       )}
 
+      {/* DEAD MAN'S SWITCH FLOATING UI */}
+      {activeDispatchId && (
+        <div style={styles.deadManPanel}>
+          <div style={styles.deadManHeader} className="mono">DEAD MAN'S SWITCH</div>
+          <div style={styles.deadManSub} className="mono">YOU ARE DISPATCHED TO A THREAT ZONE</div>
+          <div style={{...styles.deadManTimer, color: timeLeft <= 15 ? 'var(--critical)' : 'white'}} className="display">
+            {timeLeft}s
+          </div>
+          <button style={styles.deadManBtn} onClick={handlePingAlive} className="display">
+            I AM OKAY
+          </button>
+          <div style={{fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '8px', textAlign: 'center'}} className="mono">FAILING TO RESPOND ESCALATES STATUS TO UNRESPONSIVE</div>
+        </div>
+      )}
+
     </div>
   );
 }
@@ -304,5 +375,10 @@ const styles = {
   input: { width: '100%', background: 'var(--bg-base)', border: '1px solid var(--border-subtle)', color: 'white', padding: '12px', borderRadius: '6px', outline: 'none', boxSizing: 'border-box' },
   textarea: { width: '100%', background: 'var(--bg-base)', border: '1px dashed var(--critical)', color: 'white', padding: '12px', borderRadius: '6px', outline: 'none', resize: 'vertical', fontFamily: 'var(--font-body)', boxSizing: 'border-box', lineHeight: 1.4 },
   aiBtn: { width: '100%', background: 'linear-gradient(45deg, #4facfe 0%, #00f2fe 100%)', color: 'black', border: 'none', padding: '10px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', letterSpacing: '1px' },
-  broadcastBtn: { width: '100%', background: 'var(--critical)', color: 'white', border: 'none', padding: '16px', borderRadius: '6px', cursor: 'pointer', fontSize: '1.2rem', letterSpacing: '2px', fontWeight: 'bold' }
+  broadcastBtn: { width: '100%', background: 'var(--critical)', color: 'white', border: 'none', padding: '16px', borderRadius: '6px', cursor: 'pointer', fontSize: '1.2rem', letterSpacing: '2px', fontWeight: 'bold' },
+  deadManPanel: { position: 'fixed', bottom: '40px', right: '40px', background: 'var(--bg-surface)', border: '2px solid var(--critical)', borderRadius: '16px', padding: '24px', width: '320px', boxShadow: '0 0 50px rgba(255,59,59,0.3)', zIndex: 1000, display: 'flex', flexDirection: 'column', alignItems: 'center' },
+  deadManHeader: { color: 'var(--critical)', fontSize: '1.2rem', fontWeight: 'bold', letterSpacing: '2px' },
+  deadManSub: { color: 'var(--text-secondary)', fontSize: '0.7rem', marginTop: '4px', textAlign: 'center' },
+  deadManTimer: { fontSize: '4rem', margin: '20px 0', lineHeight: 1 },
+  deadManBtn: { width: '100%', padding: '20px', fontSize: '1.5rem', background: 'var(--safe)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', letterSpacing: '3px', transition: 'transform 0.1s' }
 };
