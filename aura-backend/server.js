@@ -102,31 +102,6 @@ app.post('/api/alerts/report', async (req, res) => {
     // Broadcast the new alert to the specific hotel room for staff dashboard
     io.to(newAlert.hotelId).emit('new_alert', newAlert);
 
-    // 🧠 Emotional Contagion Interception
-    if (!recentSOSPerHotel[newAlert.hotelId]) recentSOSPerHotel[newAlert.hotelId] = [];
-    const now = Date.now();
-    recentSOSPerHotel[newAlert.hotelId].push(now);
-    // Filter out alerts older than 60 seconds
-    recentSOSPerHotel[newAlert.hotelId] = recentSOSPerHotel[newAlert.hotelId].filter(t => now - t <= 60000);
-    
-    if (recentSOSPerHotel[newAlert.hotelId].length >= 5) {
-        console.log(`🧠 EMOTIONAL CONTAGION INTERCEPTED [${newAlert.hotelId}]: Escalation stopped.`);
-        const calmMsg = "STAFF ARE RESPONDING. Your evacuation route is clear. Please move calmly and do not panic. We have the situation under control.";
-        io.to(newAlert.hotelId).emit('mass_safety_prompt', { message: calmMsg, timestamp: new Date().toISOString(), type: 'EMERGENCY' });
-        // Reset to prevent spamming
-        recentSOSPerHotel[newAlert.hotelId] = [];
-    }
-
-    // Determine if it affects all guests
-    const globalTypes = ['FIRE', 'EARTHQUAKE', 'CRISIS'];
-    const affectsAllGuests = globalTypes.includes(newAlert.type);
-
-    if (affectsAllGuests) {
-        console.log(`📢 AUTO-BROADCAST [${newAlert.hotelId}]: Alert affects all guests, sending mass notification.`);
-        const massMsg = `EMERGENCY ALERT: ${newAlert.type} reported. Please stay alert and await further instructions.`;
-        io.to(newAlert.hotelId).emit('mass_safety_prompt', { message: massMsg, timestamp: new Date().toISOString() });
-    }
-
     let guestInstruction = `Your ${newAlert.type} alert has been received. Please stay safe.`;
 
     const hotel = hotels.find(h => h.hotelId === alertData.hotelId);

@@ -21,7 +21,7 @@ const EMERGENCY_TYPES = [
   },
   {
     type: 'SECURITY',
-    emoji: '🛡',
+    emoji: '👮',
     label: 'SECURITY',
     sub: 'Intruder, threat, suspicious',
     color: 'var(--info)',

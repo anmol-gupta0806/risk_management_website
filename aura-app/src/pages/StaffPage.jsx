@@ -47,6 +47,7 @@ export default function StaffPage() {
     };
 
     const handleAlertUpdated = (updatedAlert) => {
+<<<<<<< HEAD
       setAlerts(prev => {
          const newAlerts = prev.map(a => a.id === updatedAlert.id ? updatedAlert : a);
          
@@ -64,6 +65,12 @@ export default function StaffPage() {
 
          return newAlerts;
       });
+=======
+      setAlerts(prev => prev.map(a => a.id === updatedAlert.id ? updatedAlert : a));
+      if (updatedAlert.status === 'resolved') {
+        setSafeGuests([]);
+      }
+>>>>>>> 536a07ad08b4cbe6283cc9d8c5f0e29f97b6439f
     };
 
     const handleCriticalityEscalated = (data) => {
