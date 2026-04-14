@@ -12,7 +12,7 @@ function StaffDashboard() {
   const fetchAlerts = async () => {
     if (!user || !user.hotelId) return;
     try {
-      const response = await fetch(`${API || 'http://localhost:3000'}/api/alerts?hotelId=${user.hotelId}`);
+      const response = await fetch(`${API}/api/alerts?hotelId=${user.hotelId}`);
       if (!response.ok) throw new Error('Network response was not ok');
       const data = await response.json();
       if (Array.isArray(data)) {
@@ -29,7 +29,7 @@ function StaffDashboard() {
   // Helper to resolve/delete an alert
   const resolveAlert = async (id) => {
     try {
-      await fetch('http://localhost:3000/api/resolve-alert', {
+      await fetch(`${API}/api/resolve-alert`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id })
